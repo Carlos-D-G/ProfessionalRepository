@@ -1,0 +1,27 @@
+name: Notify Discord
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, closed]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send commit/PR info to Discord
+        uses: Ilshidur/action-discord@master
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          DISCORD_USERNAME: "GitHub Bot"
+          DISCORD_AVATAR: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+          DISCORD_EMBEDS: |
+            [
+              {
+                "title": "📢 Repository Update",
+                "description": "Event: `${{ github.event_name }}`\nRepository: **${{ github.repository }}**\n[View on GitHub](${{ github.event.repository.html_url }})",
+                "color": 7506394
+              }
+            ]
