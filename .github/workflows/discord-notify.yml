@@ -13,17 +13,80 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     steps:
-      - name: Send commit/PR info to Discord
-        uses: Ilshidur/action-discord@master
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          DISCORD_USERNAME: "GitHub Bot"
-          DISCORD_AVATAR: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
-          DISCORD_EMBEDS: |
-            [
-              {
-                "title": "📢 Repository Update",
-                "description": "Event: `${{ github.event_name }}`\nRepository: **${{ github.repository }}**\n[View on GitHub](${{ github.event.repository.html_url }})",
-                "color": 7506394
-              }
-            ]
+      # Push notification
+      - name: Send push notification
+        if: github.event_name == 'push'
+        run: |
+          COMMIT_MSGS=$(echo "${{ toJson(github.event.commits) }}" | jq -r '.[] | "- \(.message) (\(.author.name))"')
+          PAYLOAD=$(jq -n \
+            --arg username "GitHub Bot" \
+            --arg avatar_url "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" \
+            --arg content "" \
+            --argjson embeds "[{
+              \"title\": \"📢 Push to main\",
+              \"description\": \"**Repository:** ${{ github.repository }}\n**Pushed by:** ${{ github.actor }}\n**Commits:**\n$COMMIT_MSGS\n[View Repository](${{ github.event.repository.html_url }})\",
+              \"color\": 3066993
+            }]" \
+            '{username: $username, avatar_url: $avatar_url, content: $content, embeds: $embeds}')
+          curl -H "Content-Type: application/json" \
+               -d "$PAYLOAD" \
+               ${{ secrets.DISCORD_WEBHOOK }}
+
+      # Pull request notification
+      - name: Send PR notification
+        if: github.event_name == 'pull_request'
+        run: |
+          STATUS="Opened"
+          COLOR=3447003
+          if [[ "${{ github.event.action }}" == "closed" ]]; then
+            if [[ "${{ github.event.pull_request.merged }}" == "true" ]]; then
+              STATUS="Merged"
+              COLOR=3066993
+            else
+              STATUS="Closed"
+              COLOR=15158332
+            fi
+          fi
+          PAYLOAD=$(jq -n \
+            --arg username "GitHub Bot" \
+            --arg avatar_url "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" \
+            --arg content "" \
+            --argjson embeds "[{
+              \"title\": \"📢 Pull Request $STATUS\",
+              \"description\": \"**Repository:** ${{ github.repository }}\n**Title:** ${{ github.event.pull_request.title }}\n**Author:** ${{ github.event.pull_request.user.login }}\n[View PR](${{ github.event.pull_request.html_url }})\",
+              \"color\": $COLOR
+            }]" \
+            '{username: $username, avatar_url: $avatar_url, content: $content, embeds: $embeds}')
+          curl -H "Content-Type: application/json" \
+               -d "$PAYLOAD" \
+               ${{ secrets.DISCORD_WEBHOOK }}
+
+      # Issue notification with full description
+      - name: Send issue notification
+        if: github.event_name == 'issues'
+        run: |
+          COLOR=3447003
+          ACTION="${{ github.event.action }}"
+          if [[ "$ACTION" == "closed" ]]; then
+            COLOR=15158332
+          elif [[ "$ACTION" == "reopened" ]]; then
+            COLOR=3066993
+          fi
+
+          # Get full issue body, escape quotes and limit to Discord's 4096 character embed description limit
+          ISSUE_BODY=$(echo "${{ github.event.issue.body }}" | head -c 4096 | sed 's/"/\\"/g')
+
+          PAYLOAD=$(jq -n \
+            --arg username "GitHub Bot" \
+            --arg avatar_url "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" \
+            --arg content "" \
+            --argjson embeds "[{
+              \"title\": \"📢 Issue $ACTION\",
+              \"description\": \"**Repository:** ${{ github.repository }}\n**Title:** ${{ github.event.issue.title }}\n**Author:** ${{ github.event.issue.user.login }}\n**Content:**\n$ISSUE_BODY\n[View Issue](${{ github.event.issue.html_url }})\",
+              \"color\": $COLOR
+            }]" \
+            '{username: $username, avatar_url: $avatar_url, content: $content, embeds: $embeds}')
+
+          curl -H "Content-Type: application/json" \
+               -d "$PAYLOAD" \
+               ${{ secrets.DISCORD_WEBHOOK }}
